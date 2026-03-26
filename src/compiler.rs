@@ -29,7 +29,7 @@ impl CompileState {
 }
 
 pub struct Compiler {
-    state: Arc<RwLock<CompileState>>,
+    pub state: Arc<RwLock<CompileState>>,
 }
 
 impl Compiler {

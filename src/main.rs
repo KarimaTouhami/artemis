@@ -58,7 +58,7 @@ impl App {
         }
     }
 
-    async fn render(&mut self, frame: &mut Frame) {
+    async fn render(&mut self, frame: &mut Frame<'_>) {
         let state = self.state.read().await;
         
         let chunks = Layout::default()

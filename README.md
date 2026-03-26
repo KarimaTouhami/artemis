@@ -9,7 +9,24 @@ High-performance terminal workstation for real-time C-to-Assembly mirroring.
 **Pipeline**: GCC compilation on file change  
 **Mirror**: .loc directive parsing for C↔ASM synchronization
 
+## Installation
+
+Requires Rust toolchain. Install from [rustup.rs](https://rustup.rs):
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
 ## Build
+
+Using Makefile:
+
+```bash
+make build          # Debug build
+make release        # Optimized release build
+```
+
+Or with cargo directly:
 
 ```bash
 cargo build --release
@@ -17,9 +34,30 @@ cargo build --release
 
 ## Usage
 
+Using Makefile:
+
+```bash
+make run            # Builds and runs with example.c
+```
+
+Or with cargo directly:
+
 ```bash
 ./target/release/artemis program.c
 ```
+
+## Make Targets
+
+- `make build` - Build in debug mode
+- `make release` - Build optimized release
+- `make run` - Build and run with example.c
+- `make test` - Run tests
+- `make check` - Check without building
+- `make fmt` - Format code
+- `make clippy` - Run linter
+- `make asm` - Generate assembly from example.c
+- `make clean` - Clean build artifacts
+- `make help` - Show all targets
 
 ## Controls
 

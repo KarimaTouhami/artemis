@@ -3,7 +3,7 @@ use std::error::Error;
 use std::time::Duration;
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent},
+    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -11,7 +11,7 @@ use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
+    text::Text,
     widgets::{Block, Borders, BorderType, Paragraph},
     Terminal,
 };
@@ -39,13 +39,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut textarea = TextArea::default();
+    let source_path = std::env::args().nth(1).unwrap_or_else(|| "example.c".into());
+    let source_content = std::fs::read_to_string(&source_path).unwrap_or_default();
+
+    let mut textarea = TextArea::from(source_content.lines().map(String::from));
     textarea.set_block(
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Thick)
             .style(Style::default().fg(NEON_GREEN).bg(VANTABLACK))
-            .title(" SOURCE [C] "),
+            .title(format!(" SOURCE [C] ({}) ", source_path)),
     );
     textarea.set_style(Style::default().fg(NEON_GREEN).bg(VANTABLACK));
 
@@ -56,6 +59,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     });
 
     let mut asm_text = String::new();
+    let mut status_msg = "MODE: EDIT | RUNTIME: OK".to_string();
 
     source_tx.send(textarea.lines().join("\n")).await.ok();
 
@@ -88,7 +92,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             f.render_widget(&textarea, top[0]);
             f.render_widget(asm_pane, top[1]);
 
-            let status = Paragraph::new(Text::from(" MODE: EDIT  |  RUNTIME: OK "))
+            let status = Paragraph::new(Text::from(status_msg.clone()))
                 .style(Style::default().fg(VANTABLACK).bg(NEON_GREEN).add_modifier(Modifier::BOLD))
                 .block(Block::default().style(Style::default().bg(VANTABLACK)));
 
@@ -107,7 +111,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     break;
                 }
 
+                if key_event.code == KeyCode::Char('s') && key_event.modifiers.contains(KeyModifiers::CONTROL) {
+                    match std::fs::write(&source_path, textarea.lines().join("\n")) {
+                        Ok(_) => status_msg = format!("SAVED to {}", source_path),
+                        Err(e) => status_msg = format!("SAVE FAILED: {}", e),
+                    }
+                    continue;
+                }
+
                 textarea.input(Input::from(key_event));
+                status_msg = "MODE: EDIT | RUNTIME: OK".to_string();
 
                 source_tx.send(textarea.lines().join("\n")).await.ok();
             }

@@ -65,6 +65,13 @@ Or with cargo directly:
 - `↑/↓`: Scroll C source
 - `PgUp/PgDn`: Scroll assembly
 
+## Interactive Editing (tui-textarea)
+
+- C source pane is now an editable text area (`tui-textarea`) with arrow keys, insert/delete, and cursor movement.
+- Typed input is debounced (300ms) and automatically triggers `gcc -S` recompilation of `example.c`.
+- The assembly pane highlights lines mapped to the current C cursor position via `.loc` directives.
+- Status bar shows mode, binary and RSP telemetry with inverted high-contrast style.
+
 ## C-to-Assembly Mapping Logic
 
 The synchronization mechanism relies on GCC's DWARF debug symbols embedded in the assembly output when compiled with `-g`:
@@ -110,8 +117,63 @@ See `compiler.rs::parse_loc_directives()` for full parser logic.
 -O0                  No optimization
 ```
 
-## Color Scheme
+## Visual Theme (Vantablack Palette)
 
-- Background: `#000000` (Vantablack)
-- Borders: `#333333` (Dark Gray)
-- Highlights: `#00FF41` (Neon Green)
+Artemis now uses a custom high-contrast terminal theme for a cyberpunk hardware feel.
+
+### Palette constants (Rust)
+
+```rust
+const VANTABLACK: Color = Color::Rgb(0, 0, 0);       // Pure Black
+const NEON_GREEN: Color = Color::Rgb(0, 255, 65);    // Primary Text
+const DIM_GREEN: Color = Color::Rgb(0, 100, 25);     // Inactive/Borders
+const CYBER_CYAN: Color = Color::Rgb(0, 255, 255);   // Keywords/Registers
+const ALERT_RED: Color = Color::Rgb(255, 0, 50);     // Segfaults/Errors
+```
+
+### Pane style rules
+
+- `C` editor and `ASM` view: background `VANTABLACK`.
+- `SUBTITLE`/title text: `CYBER_CYAN` + `Modifier::BOLD`.
+- Borders: thick or rounded with `DIM_GREEN` color.
+- C editor text: `NEON_GREEN`.
+- ASM hex/instruction text: AI choreography where `mov/push/pop/add/sub` is `CYBER_CYAN`, directives (`.` prefix) are `DarkGray`, everything else is `NEON_GREEN`.
+
+### Footer pulse bar style
+
+- Base line: top border `DIM_GREEN`.
+- Status chunk: inverted style (`NEON_GREEN` background, `VANTABLACK` foreground).
+- RSP field: `CYBER_CYAN`.
+- Error statuses: `ALERT_RED`.
+
+### Example layout code
+
+```rust
+let c_pane = Paragraph::new(c_code)
+    .style(Style::default().bg(VANTABLACK).fg(NEON_GREEN))
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Thick)
+            .border_style(Style::default().fg(DIM_GREEN))
+            .title(Span::styled(" SOURCE [C] ", Style::default().fg(CYBER_CYAN).add_modifier(Modifier::BOLD)))
+    );
+
+let asm_pane = Paragraph::new(asm_lines)
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(DIM_GREEN))
+            .title(Span::styled(" ASSEMBLY [ASM] ", Style::default().fg(CYBER_CYAN).add_modifier(Modifier::BOLD)))
+    );
+
+let pulse_bar = Paragraph::new(pulse_line)
+    .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM_GREEN)));
+```
+
+> Ensure your project imports the required Ratatui types:
+> `use ratatui::style::{Color, Modifier, Style};`
+> `use ratatui::widgets::{Block, Borders, BorderType, Paragraph, Wrap};`
+> `use ratatui::text::{Line, Span};`
+

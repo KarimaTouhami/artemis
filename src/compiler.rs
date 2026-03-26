@@ -6,6 +6,7 @@ use std::process::Command;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+#[derive(Clone)]
 pub struct CompileState {
     pub file_path: String,
     pub c_content: String,

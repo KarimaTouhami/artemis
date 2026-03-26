@@ -3,8 +3,11 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use std::process::Stdio;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::io::AsyncWriteExt;
+use tokio::sync::{mpsc, RwLock};
+use tokio::time::{sleep_until, Instant, Duration};
 
 #[derive(Clone)]
 pub struct CompileState {
@@ -123,4 +126,71 @@ impl Compiler {
         
         None
     }
+}
+
+pub async fn spawn_compiler_worker(
+    mut source_rx: mpsc::Receiver<String>,
+    asm_tx: mpsc::Sender<String>,
+) {
+    let mut pending: Option<String> = None;
+    let mut deadline: Option<Instant> = None;
+
+    loop {
+        tokio::select! {
+            maybe = source_rx.recv() => {
+                match maybe {
+                    Some(src) => {
+                        pending = Some(src);
+                        deadline = Some(Instant::now() + Duration::from_millis(300));
+                    }
+                    None => break,
+                }
+            }
+            _ = async {
+                if let Some(dl) = deadline {
+                    sleep_until(dl).await;
+                    true
+                } else {
+                    std::future::pending().await
+                }
+            } => {
+                if let Some(src) = pending.take() {
+                    deadline = None;
+                    let asm = compile_to_asm(src).await.unwrap_or_else(|e| format!("; compile failed: {}", e));
+                    let _ = asm_tx.send(asm).await;
+                }
+            }
+        }
+    }
+}
+
+async fn compile_to_asm(src: String) -> Result<String, String> {
+    let mut child = tokio::process::Command::new("gcc")
+        .arg("-x")
+        .arg("c")
+        .arg("-")
+        .arg("-S")
+        .arg("-masm=intel")
+        .arg("-fno-stack-protector")
+        .arg("-O0")
+        .arg("-g")
+        .arg("-o")
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("spawn error: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(src.as_bytes()).await.map_err(|e| format!("stdin write: {}", e))?;
+    }
+
+    let output = child.wait_with_output().await.map_err(|e| format!("wait error: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("gcc failed: {}", stderr));
+    }
+    let out = String::from_utf8_lossy(&output.stdout).to_string();
+    Ok(out)
 }

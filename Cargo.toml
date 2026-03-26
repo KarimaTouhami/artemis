@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ratatui = "0.26"
-crossterm = "0.27"
-notify = "6.1"
-tui-textarea = "0.4.0"
-tokio = { version = "1.36", features = ["full"] }
+tokio = { version = "1.50", features = ["full"] }
+crossterm = "0.28"
+ratatui = "0.29"
+tui-textarea = "0.7"
+regex = "1.11"
+lazy_static = "1.4"
 anyhow = "1.0"
+notify = "6.1"

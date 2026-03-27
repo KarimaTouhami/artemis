@@ -37,6 +37,74 @@ enum Focus {
     Assembly,
 }
 
+fn asm_max_scroll(asm_text: &str) -> u16 {
+    asm_text.lines().count().saturating_sub(1) as u16
+}
+
+fn handle_asm_navigation(key_event: crossterm::event::KeyEvent, asm_text: &str, asm_scroll: &mut u16) -> bool {
+    let max_scroll = asm_max_scroll(asm_text);
+
+    match key_event.code {
+        KeyCode::Up => {
+            *asm_scroll = asm_scroll.saturating_sub(1);
+            true
+        }
+        KeyCode::Down => {
+            *asm_scroll = (*asm_scroll).saturating_add(1).min(max_scroll);
+            true
+        }
+        KeyCode::PageUp => {
+            *asm_scroll = asm_scroll.saturating_sub(10);
+            true
+        }
+        KeyCode::PageDown => {
+            *asm_scroll = (*asm_scroll).saturating_add(10).min(max_scroll);
+            true
+        }
+        KeyCode::Home => {
+            *asm_scroll = 0;
+            true
+        }
+        KeyCode::End => {
+            *asm_scroll = max_scroll;
+            true
+        }
+        KeyCode::Char('k') if key_event.modifiers.is_empty() => {
+            *asm_scroll = asm_scroll.saturating_sub(1);
+            true
+        }
+        KeyCode::Char('j') if key_event.modifiers.is_empty() => {
+            *asm_scroll = (*asm_scroll).saturating_add(1).min(max_scroll);
+            true
+        }
+        KeyCode::Char('u') if key_event.modifiers.is_empty() => {
+            *asm_scroll = asm_scroll.saturating_sub(5);
+            true
+        }
+        KeyCode::Char('d') if key_event.modifiers.is_empty() => {
+            *asm_scroll = (*asm_scroll).saturating_add(5).min(max_scroll);
+            true
+        }
+        KeyCode::Char('b') if key_event.modifiers.is_empty() => {
+            *asm_scroll = asm_scroll.saturating_sub(10);
+            true
+        }
+        KeyCode::Char('f') if key_event.modifiers.is_empty() => {
+            *asm_scroll = (*asm_scroll).saturating_add(10).min(max_scroll);
+            true
+        }
+        KeyCode::Char('g') if key_event.modifiers.is_empty() => {
+            *asm_scroll = 0;
+            true
+        }
+        KeyCode::Char('G') if key_event.modifiers == KeyModifiers::SHIFT => {
+            *asm_scroll = max_scroll;
+            true
+        }
+        _ => false,
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     enable_raw_mode()?;
@@ -70,6 +138,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut show_help = false;
     let mut asm_scroll: u16 = 0;
     let mut follow_mode = true;
+    let mut focus_switch_armed = false;
 
     source_tx.send(textarea.lines().join("\n")).await.ok();
 
@@ -129,8 +198,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Line::from("Controls:"),
                     Line::from("  q / Ctrl+C: Quit"),
                     Line::from("  ? : Toggle help"),
-                    Line::from("  Tab / Shift+Tab: Switch pane"),
-                    Line::from("  Up/Down/PgUp/PgDn/Home/End: Scroll (focused pane)"),
+                    Line::from("  Esc then Tab / Shift+Tab: Switch pane"),
+                    Line::from("  ASM nav: Up/Down/PgUp/PgDn/Home/End or j/k/u/d/b/f/g/G"),
                     Line::from("  Ctrl+S: Save"),
                     Line::from("  r: Reload file"),
                     Line::from("  F5: Toggle follow mode"),
@@ -191,6 +260,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     continue;
                 }
 
+                if key_event.code == KeyCode::Esc && key_event.modifiers.is_empty() {
+                    focus_switch_armed = !focus_switch_armed;
+                    status_msg = if focus_switch_armed {
+                        "FOCUS switch armed: press Tab/Shift+Tab".to_string()
+                    } else {
+                        "FOCUS switch canceled".to_string()
+                    };
+                    continue;
+                }
+
                 if key_event.code == KeyCode::F(5) {
                     follow_mode = !follow_mode;
                     status_msg = format!("FOLLOW mode: {}", if follow_mode { "ON" } else { "OFF" });
@@ -218,12 +297,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 if key_event.code == KeyCode::Tab {
-                    focus = if focus == Focus::Source { Focus::Assembly } else { Focus::Source };
-                    status_msg = format!("FOCUS -> {:?}", focus);
+                    if focus_switch_armed {
+                        focus = if focus == Focus::Source { Focus::Assembly } else { Focus::Source };
+                        status_msg = format!("FOCUS -> {:?}", focus);
+                        focus_switch_armed = false;
+                    } else {
+                        status_msg = "Press Esc first, then Tab to switch pane".to_string();
+                    }
                     continue;
                 } else if key_event.code == KeyCode::BackTab {
-                    focus = if focus == Focus::Assembly { Focus::Source } else { Focus::Assembly };
-                    status_msg = format!("FOCUS -> {:?}", focus);
+                    if focus_switch_armed {
+                        focus = if focus == Focus::Assembly { Focus::Source } else { Focus::Assembly };
+                        status_msg = format!("FOCUS -> {:?}", focus);
+                        focus_switch_armed = false;
+                    } else {
+                        status_msg = "Press Esc first, then Shift+Tab to switch pane".to_string();
+                    }
                     continue;
                 }
 
@@ -242,22 +331,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         source_tx.send(textarea.lines().join("\n")).await.ok();
                     }
                     Focus::Assembly => {
-                        if key_event.code == KeyCode::Up {
-                            asm_scroll = asm_scroll.saturating_sub(1);
-                        } else if key_event.code == KeyCode::Down {
-                            asm_scroll = asm_scroll.saturating_add(1);
-                        } else if key_event.code == KeyCode::PageUp {
-                            asm_scroll = asm_scroll.saturating_sub(10);
-                        } else if key_event.code == KeyCode::PageDown {
-                            asm_scroll = asm_scroll.saturating_add(10);
-                        } else if key_event.code == KeyCode::Home {
-                            asm_scroll = 0;
-                        } else if key_event.code == KeyCode::End {
-                            asm_scroll = asm_text.lines().count().saturating_sub(1) as u16;
+                        let handled = handle_asm_navigation(key_event, &asm_text, &mut asm_scroll);
+                        if handled {
+                            status_msg = format!(
+                                "MODE: VIEW ASM | SCROLL: {}/{}",
+                                asm_scroll,
+                                asm_max_scroll(&asm_text)
+                            );
                         } else {
-                            textarea.input(Input::from(key_event));
+                            status_msg = "MODE: VIEW ASM | use j/k/u/d/b/f/g/G or arrows".to_string();
                         }
-                        status_msg = "MODE: VIEW ASM | RUNTIME: OK".to_string();
                     }
                 }
             }

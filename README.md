@@ -76,10 +76,12 @@ Or with cargo directly:
 - `q`: Quit application
 - `Ctrl+c`: Force quit
 - `?`: Toggle help overlay
-- `Tab` / `Shift+Tab`: Switch focus between C source / assembly
-- `↑/↓`: Scroll in focused pane (`source` uses the built-in textarea navigation; `assembly` scrolls the assembly pane)
-- `PgUp/PgDn`: Page scroll in focused pane
-- `Home` / `End`: Jump to top/bottom of the focused assembly pane
+- `Esc` then `Tab` / `Shift+Tab`: Switch focus between C source / assembly
+- `↑/↓`, `PgUp/PgDn`, `Home` / `End`: Scroll in focused pane (`source` uses textarea navigation; `assembly` scrolls the assembly pane)
+- `j` / `k` (ASM focus): Line down/up
+- `d` / `u` (ASM focus): Fast scroll down/up by 5 lines
+- `f` / `b` (ASM focus): Page down/up
+- `g` / `G` (ASM focus): Jump to top/bottom
 - `Ctrl+s`: Save current C buffer back to source file
 - `r`: Reload source file from disk
 - `F5`: Toggle follow-mode (status displayed in footer)

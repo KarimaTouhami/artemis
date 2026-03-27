@@ -1,6 +1,18 @@
 # Artemis
 
-High-performance terminal workstation for real-time C-to-Assembly mirroring.
+High-performance interactive terminal workstation for real-time C-to-Assembly mirroring and live code analysis.
+
+## Overview
+
+Artemis is a Rust-based TUI that watches C source changes, compiles to assembly, and keeps the source and generated assembly synchronized in real time. It is ideal for learning compiler output, exploring optimization effects, or teaching systems programming.
+
+## Features
+
+- Live updating C and corresponding assembly panes
+- GCC-based assembly generation with `.loc` mapping for precise cross-highlighting
+- Minimal dependency set: Rust + GCC toolchain
+- Optimized 1:1 DWARF `.loc` mapping at `-O0`, plus robust handling for real-world assembly patterns
+- Embedded “Vantablack cyberpunk” terminal theme with focused syntax highlighting
 
 ## Architecture
 
@@ -61,9 +73,18 @@ Or with cargo directly:
 
 ## Controls
 
-- `q`: Quit
-- `↑/↓`: Scroll C source
-- `PgUp/PgDn`: Scroll assembly
+- `q`: Quit application
+- `Ctrl+c`: Force quit
+- `?`: Toggle help overlay
+- `Tab` / `Shift+Tab`: Switch focus between C source / assembly
+- `↑/↓`: Scroll in focused pane (`source` uses the built-in textarea navigation; `assembly` scrolls the assembly pane)
+- `PgUp/PgDn`: Page scroll in focused pane
+- `Home` / `End`: Jump to top/bottom of the focused assembly pane
+- `Ctrl+s`: Save current C buffer back to source file
+- `r`: Reload source file from disk
+- `F5`: Toggle follow-mode (status displayed in footer)
+
+> Note: `/` search is currently shown in help text but not fully implemented in runtime yet.
 
 ## Interactive Editing (tui-textarea)
 

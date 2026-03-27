@@ -3,7 +3,7 @@ use std::error::Error;
 use std::time::Duration;
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    event::{self, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -11,7 +11,7 @@ use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    text::Text,
+    text::{Text, Line},
     widgets::{Block, Borders, BorderType, Paragraph},
     Terminal,
 };
@@ -30,6 +30,12 @@ const ALERT_RED: Color = Color::Rgb(255, 0, 50);
 const YELLOW: Color = Color::Rgb(255, 255, 0);
 const ORANGE: Color = Color::Rgb(255, 100, 0);
 const DARK_GRAY: Color = Color::Rgb(80, 80, 80);
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Focus {
+    Source,
+    Assembly,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -60,6 +66,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut asm_text = String::new();
     let mut status_msg = "MODE: EDIT | RUNTIME: OK".to_string();
+    let mut focus = Focus::Source;
+    let mut show_help = false;
+    let mut asm_scroll: u16 = 0;
+    let mut follow_mode = true;
 
     source_tx.send(textarea.lines().join("\n")).await.ok();
 
@@ -79,20 +89,65 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let asm_lines = highlighter::highlight_asm(&asm_text);
             let asm_text_view = Text::from(asm_lines);
 
+            let source_border_style = if focus == Focus::Source {
+                Style::default().fg(CYBER_CYAN)
+            } else {
+                Style::default().fg(DIM_GREEN)
+            };
+            let assembly_border_style = if focus == Focus::Assembly {
+                Style::default().fg(CYBER_CYAN)
+            } else {
+                Style::default().fg(DIM_GREEN)
+            };
+
+            textarea.set_block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Thick)
+                    .style(Style::default().fg(NEON_GREEN).bg(VANTABLACK))
+                    .border_style(source_border_style)
+                    .title(format!(" SOURCE [C] ({}) ", source_path)),
+            );
+
             let asm_pane = Paragraph::new(asm_text_view)
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
                         .border_type(BorderType::Thick)
                         .style(Style::default().fg(NEON_GREEN).bg(VANTABLACK))
+                        .border_style(assembly_border_style)
                         .title(" ASSEMBLY [ASM] "),
                 )
-                .style(Style::default().bg(VANTABLACK));
+                .style(Style::default().bg(VANTABLACK))
+                .scroll((asm_scroll, 0));
 
             f.render_widget(&textarea, top[0]);
             f.render_widget(asm_pane, top[1]);
 
-            let status = Paragraph::new(Text::from(status_msg.clone()))
+            if show_help {
+                let help_text = Text::from(vec![
+                    Line::from("Controls:"),
+                    Line::from("  q / Ctrl+C: Quit"),
+                    Line::from("  ? : Toggle help"),
+                    Line::from("  Tab / Shift+Tab: Switch pane"),
+                    Line::from("  Up/Down/PgUp/PgDn/Home/End: Scroll (focused pane)"),
+                    Line::from("  Ctrl+S: Save"),
+                    Line::from("  r: Reload file"),
+                    Line::from("  F5: Toggle follow mode"),
+                    Line::from("  /: Search mode (placeholder currently)")
+                ]);
+                let overlay = Paragraph::new(help_text)
+                    .style(Style::default().bg(VANTABLACK).fg(NEON_GREEN))
+                    .block(Block::default().borders(Borders::ALL).title(" HELP ").border_style(Style::default().fg(CYBER_CYAN)));
+                f.render_widget(overlay, chunks[0]);
+            }
+
+            let status_line = format!(
+                "{} | FOCUS: {:?} | FOLLOW: {} | ASM scroll: {}",
+                status_msg, focus, follow_mode, asm_scroll
+            );
+
+            let status = Paragraph::new(Text::from(status_line))
                 .style(Style::default().fg(VANTABLACK).bg(NEON_GREEN).add_modifier(Modifier::BOLD))
                 .block(Block::default().style(Style::default().bg(VANTABLACK)));
 
@@ -107,8 +162,69 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         if event::poll(Duration::from_millis(20))? {
             if let Event::Key(key_event) = event::read()? {
-                if key_event.code == KeyCode::Char('q') && key_event.modifiers.is_empty() {
+                if (key_event.code == KeyCode::Char('q') && key_event.modifiers.is_empty())
+                    || (key_event.code == KeyCode::Char('c') && key_event.modifiers.contains(KeyModifiers::CONTROL))
+                {
                     break;
+                }
+
+                if key_event.code == KeyCode::Char('?') && key_event.modifiers.is_empty() {
+                    show_help = !show_help;
+                    status_msg = if show_help {
+                        "HELP: press ? to close".to_string()
+                    } else {
+                        "MODE: EDIT | RUNTIME: OK".to_string()
+                    };
+                    continue;
+                }
+
+                if show_help {
+                    if key_event.code == KeyCode::Esc {
+                        show_help = false;
+                        status_msg = "MODE: EDIT | RUNTIME: OK".to_string();
+                    }
+                    continue;
+                }
+
+                if key_event.code == KeyCode::Char('/') && key_event.modifiers.is_empty() {
+                    status_msg = "SEARCH mode is not implemented; use source editor techniques".to_string();
+                    continue;
+                }
+
+                if key_event.code == KeyCode::F(5) {
+                    follow_mode = !follow_mode;
+                    status_msg = format!("FOLLOW mode: {}", if follow_mode { "ON" } else { "OFF" });
+                    continue;
+                }
+
+                if key_event.code == KeyCode::Char('r') && key_event.modifiers.is_empty() {
+                    match std::fs::read_to_string(&source_path) {
+                        Ok(content) => {
+                            textarea = TextArea::from(content.lines().map(String::from));
+                            textarea.set_style(Style::default().fg(NEON_GREEN).bg(VANTABLACK));
+                            textarea.set_block(
+                                Block::default()
+                                    .borders(Borders::ALL)
+                                    .border_type(BorderType::Thick)
+                                    .style(Style::default().fg(NEON_GREEN).bg(VANTABLACK))
+                                    .title(format!(" SOURCE [C] ({}) ", source_path)),
+                            );
+                            source_tx.send(textarea.lines().join("\n")).await.ok();
+                            status_msg = format!("RELOADED {}", source_path);
+                        }
+                        Err(e) => status_msg = format!("RELOAD FAILED: {}", e),
+                    }
+                    continue;
+                }
+
+                if key_event.code == KeyCode::Tab {
+                    focus = if focus == Focus::Source { Focus::Assembly } else { Focus::Source };
+                    status_msg = format!("FOCUS -> {:?}", focus);
+                    continue;
+                } else if key_event.code == KeyCode::BackTab {
+                    focus = if focus == Focus::Assembly { Focus::Source } else { Focus::Assembly };
+                    status_msg = format!("FOCUS -> {:?}", focus);
+                    continue;
                 }
 
                 if key_event.code == KeyCode::Char('s') && key_event.modifiers.contains(KeyModifiers::CONTROL) {
@@ -119,10 +235,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     continue;
                 }
 
-                textarea.input(Input::from(key_event));
-                status_msg = "MODE: EDIT | RUNTIME: OK".to_string();
-
-                source_tx.send(textarea.lines().join("\n")).await.ok();
+                match focus {
+                    Focus::Source => {
+                        textarea.input(Input::from(key_event));
+                        status_msg = "MODE: EDIT | RUNTIME: OK".to_string();
+                        source_tx.send(textarea.lines().join("\n")).await.ok();
+                    }
+                    Focus::Assembly => {
+                        if key_event.code == KeyCode::Up {
+                            asm_scroll = asm_scroll.saturating_sub(1);
+                        } else if key_event.code == KeyCode::Down {
+                            asm_scroll = asm_scroll.saturating_add(1);
+                        } else if key_event.code == KeyCode::PageUp {
+                            asm_scroll = asm_scroll.saturating_sub(10);
+                        } else if key_event.code == KeyCode::PageDown {
+                            asm_scroll = asm_scroll.saturating_add(10);
+                        } else if key_event.code == KeyCode::Home {
+                            asm_scroll = 0;
+                        } else if key_event.code == KeyCode::End {
+                            asm_scroll = asm_text.lines().count().saturating_sub(1) as u16;
+                        } else {
+                            textarea.input(Input::from(key_event));
+                        }
+                        status_msg = "MODE: VIEW ASM | RUNTIME: OK".to_string();
+                    }
+                }
             }
         }
     }

@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::collections::HashMap;
 use std::error::Error;
 use std::time::Duration;
 
@@ -39,6 +40,22 @@ enum Focus {
 
 fn asm_max_scroll(asm_text: &str) -> u16 {
     asm_text.lines().count().saturating_sub(1) as u16
+}
+
+fn parse_loc_directives(asm_text: &str) -> HashMap<usize, Vec<usize>> {
+    let mut map: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (idx, line) in asm_text.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with(".loc") {
+            let parts: Vec<&str> = trimmed.split_whitespace().collect();
+            if parts.len() >= 3 {
+                if let Ok(line_num) = parts[2].parse::<usize>() {
+                    map.entry(line_num).or_default().push(idx);
+                }
+            }
+        }
+    }
+    map
 }
 
 fn handle_asm_navigation(key_event: crossterm::event::KeyEvent, asm_text: &str, asm_scroll: &mut u16) -> bool {
@@ -133,6 +150,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     });
 
     let mut asm_text = String::new();
+    let mut asm_loc_map: HashMap<usize, Vec<usize>> = HashMap::new();
     let mut status_msg = "MODE: EDIT | RUNTIME: OK".to_string();
     let mut focus = Focus::Source;
     let mut show_help = false;
@@ -155,7 +173,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
                 .split(chunks[0]);
 
-            let asm_lines = highlighter::highlight_asm(&asm_text);
+            let mut asm_lines = highlighter::highlight_asm(&asm_text);
+
+            let source_cursor_line = (textarea.cursor().0 + 1) as usize;
+            let selected_asm_lines = asm_loc_map.get(&source_cursor_line);
+
+            if let Some(lines) = selected_asm_lines {
+                for &selected in lines {
+                    if (selected as usize) < asm_lines.len() {
+                        // Apply background highlight to all spans in this line
+                        for span in &mut asm_lines[selected as usize].spans {
+                            span.style = span.style.bg(Color::Rgb(5, 30, 15));
+                        }
+                    }
+                }
+            }
+
+            if follow_mode {
+                asm_scroll = selected_asm_lines
+                    .and_then(|lines| lines.first().cloned())
+                    .map(|line| line as u16)
+                    .unwrap_or_else(|| (source_cursor_line.saturating_sub(1) as u16).min(asm_max_scroll(&asm_text)));
+            }
+
             let asm_text_view = Text::from(asm_lines);
 
             let source_border_style = if focus == Focus::Source {
@@ -226,6 +266,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
         if let Ok(new_asm) = tokio::time::timeout(Duration::from_millis(10), asm_rx.recv()).await {
             if let Some(s) = new_asm {
                 asm_text = s;
+                asm_loc_map = parse_loc_directives(&asm_text);
+
+                if follow_mode {
+                    let source_cursor_line = textarea.cursor().0 + 1; // convert to 1-based location
+                    asm_scroll = if let Some(asm_lines) = asm_loc_map.get(&source_cursor_line) {
+                        *asm_lines.first().unwrap_or(&0) as u16
+                    } else {
+                        // fallback: keep source cursor line if no mapping available
+                        (source_cursor_line.saturating_sub(1) as u16).min(asm_max_scroll(&asm_text))
+                    };
+                } else {
+                    asm_scroll = asm_scroll.min(asm_max_scroll(&asm_text));
+                }
             }
         }
 

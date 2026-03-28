@@ -1,202 +1,190 @@
 # Artemis
 
-High-performance interactive terminal workstation for real-time C-to-Assembly mirroring and live code analysis.
+**Real-time C-to-Assembly development tool for learning compiler behavior and systems programming.**
 
-## Overview
+Watch your C code, see the compiled assembly instantly. Edit live, explore optimization effects, understand how code becomes machine instructions.
 
-Artemis is a Rust-based TUI that watches C source changes, compiles to assembly, and keeps the source and generated assembly synchronized in real time. It is ideal for learning compiler output, exploring optimization effects, or teaching systems programming.
+---
+
+## What is Artemis?
+
+Artemis is an interactive terminal application that synchronizes C source code with its compiled assembly output. Write or modify C in the left pane, watch the x86-64 assembly appear in the right pane in real time. Powered by GCC and built in Rust, it's minimal, fast, and ideal for learning.
 
 ## Features
 
-- Live updating C and corresponding assembly panes
-- GCC-based assembly generation with `.loc` mapping for precise cross-highlighting
-- Minimal dependency set: Rust + GCC toolchain
-- Optimized 1:1 DWARF `.loc` mapping at `-O0`, plus robust handling for real-world assembly patterns
-- Embedded “Vantablack cyberpunk” terminal theme with focused syntax highlighting
+✨ **Live Editing** — Modify C code and see assembly recompile instantly (300ms debounce)  
+🎯 **Precise Mapping** — DWARF debug symbols map each C line to its assembly equivalent  
+🌙 **Built-in Theme** — "Vantablack" high-contrast color scheme for focused work  
+⚡ **Zero Bloat** — Minimal dependencies: just Rust and GCC  
+🛡️ **Smart Compilation** — Handles optimization levels, inlining, and real-world patterns
 
-## Architecture
+## Quick Start
 
-**Core**: Rust TUI (ratatui + crossterm)  
-**Watcher**: Async file monitor (notify)  
-**Pipeline**: GCC compilation on file change  
-**Mirror**: .loc directive parsing for C↔ASM synchronization
+### Requirements
 
-## Installation
+- Rust toolchain ([rustup.rs](https://rustup.rs))
+- GCC with assembly generation support
 
-Requires Rust toolchain. Install from [rustup.rs](https://rustup.rs):
+### Installation & Run
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+git clone https://github.com/KarimaTouhami/artemis.git
+cd artemis
+
+# Quick start with example
+make run
+
+# Or run with your own C file
+./target/release/artemis myprogram.c
 ```
 
-## Build
-
-Using Makefile:
+### Build Commands
 
 ```bash
 make build          # Debug build
 make release        # Optimized release build
-```
-
-Or with cargo directly:
-
-```bash
-cargo build --release
+make clean          # Remove artifacts
 ```
 
 ## Usage
 
-Using Makefile:
+### Starting Artemis
 
 ```bash
-make run            # Builds and runs with example.c
+artemis <source.c>
 ```
 
-Or with cargo directly:
+The application opens with your C code on the left and generated assembly on the right. Edit the C code and watch the assembly update in real time.
 
-```bash
-./target/release/artemis program.c
+### Keyboard Controls
+
+**General:**
+| Key | Action |
+|-----|--------|
+| `q` | Quit |
+| `?` | Show help |
+| `Tab` / `Shift+Tab` | Switch panes |
+| `Ctrl+s` | Save file |
+| `r` | Reload from disk |
+| `F5` | Toggle follow-mode |
+
+**Assembly Pane (when focused):**
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Down / Up |
+| `d` / `u` | Fast scroll (5 lines) |
+| `f` / `b` | Page down / up |
+| `g` / `G` | Jump to top / bottom |
+
+**Source Pane (when focused):**
+- Arrow keys for editing
+- `PgUp` / `PgDn` to scroll
+
+## How It Works
+
+### C-to-Assembly Synchronization
+
+Artemis uses GCC's DWARF debug information to map C source lines to generated assembly instructions. When you compile with `-g`, GCC embeds `.loc` directives that identify which assembly instructions correspond to each line of C code.
+
+#### Example
+
+```c
+int add(int a, int b) {
+    return a + b;
+}
 ```
 
-## Make Targets
-
-- `make build` - Build in debug mode
-- `make release` - Build optimized release
-- `make run` - Build and run with example.c
-- `make test` - Run tests
-- `make check` - Check without building
-- `make fmt` - Format code
-- `make clippy` - Run linter
-- `make asm` - Generate assembly from example.c
-- `make clean` - Clean build artifacts
-- `make help` - Show all targets
-
-## Controls
-
-- `q`: Quit application
-- `Ctrl+c`: Force quit
-- `?`: Toggle help overlay
-- `Esc` then `Tab` / `Shift+Tab`: Switch focus between C source / assembly
-- `↑/↓`, `PgUp/PgDn`, `Home` / `End`: Scroll in focused pane (`source` uses textarea navigation; `assembly` scrolls the assembly pane)
-- `j` / `k` (ASM focus): Line down/up
-- `d` / `u` (ASM focus): Fast scroll down/up by 5 lines
-- `f` / `b` (ASM focus): Page down/up
-- `g` / `G` (ASM focus): Jump to top/bottom
-- `Ctrl+s`: Save current C buffer back to source file
-- `r`: Reload source file from disk
-- `F5`: Toggle follow-mode (status displayed in footer)
-
-> Note: `/` search is currently shown in help text but not fully implemented in runtime yet.
-
-## Interactive Editing (tui-textarea)
-
-- C source pane is now an editable text area (`tui-textarea`) with arrow keys, insert/delete, and cursor movement.
-- Typed input is debounced (300ms) and automatically triggers `gcc -S` recompilation of `example.c`.
-- The assembly pane highlights lines mapped to the current C cursor position via `.loc` directives.
-- Status bar shows mode, binary and RSP telemetry with inverted high-contrast style.
-
-## C-to-Assembly Mapping Logic
-
-The synchronization mechanism relies on GCC's DWARF debug symbols embedded in the assembly output when compiled with `-g`:
-
-### .loc Directive Structure
+Generates assembly with mapping:
 
 ```asm
-.loc <file_id> <line_number> <column>
-```
-
-Example:
-```asm
-.loc 1 5 0
-movl $10, -4(%rbp)
-.loc 1 6 0
-movl -4(%rbp), %eax
+.loc 1 2 0          <- Line 2 of C file
+    movl    %edi, -4(%rbp)
+    movl    %esi, -8(%rbp)
+.loc 1 3 0          <- Line 3 of C file
+    movl    -4(%rbp), %eax
+    addl    -8(%rbp), %eax
 ```
 
 ### Mapping Algorithm
 
-1. **Parse Phase**: Iterate through `.s` file line-by-line
-2. **Extract**: When `.loc 1 N 0` is found, record: `C_line[N] → ASM_line[current_index]`
-3. **Store**: Build `HashMap<usize, Vec<usize>>` where key = C line, value = ASM line indices
-4. **Lookup**: Given C cursor position at line `N`, query map for corresponding ASM block
+1. Parse the generated `.s` file for `.loc` directives
+2. Build a map: `C_line → [ASM_line indices]`
+3. When cursor is at C line N, highlight corresponding ASM instructions
+4. Handle edge cases: inlining, loop unrolling, optimization effects
 
-### Edge Cases
+### GCC Compilation Flags
 
-- Multiple ASM instructions can map to single C line (loop unrolling, inlining)
-- Compiler optimizations may reorder or eliminate instructions
-- `-O0` and `-fno-stack-protector` flags preserve 1:1 correspondence
+Artemis uses these flags for optimal mapping:
 
-### Implementation
-
-See `compiler.rs::parse_loc_directives()` for full parser logic.
-
-## GCC Flags
-
-```
--S                    Generate assembly
--masm=intel          Intel syntax
--fno-stack-protector Disable canary insertion
--g                   Emit debug symbols
--O0                  No optimization
+```bash
+-S                    # Generate assembly only
+-masm=intel          # Intel syntax (readable)
+-g                   # Emit DWARF debug symbols
+-O0                  # No optimization (clearest mapping)
+-fno-stack-protector # Skip canary code
 ```
 
-## Visual Theme (Vantablack Palette)
+## Architecture
 
-Artemis now uses a custom high-contrast terminal theme for a cyberpunk hardware feel.
+| Component | Purpose |
+|-----------|---------|
+| **Core UI** | Ratatui + Crossterm for terminal rendering |
+| **File Watcher** | Notify crate monitors source file changes |
+| **Compiler** | GCC pipeline for assembly generation |
+| **Parser** | DWARF `.loc` directive extraction |
+| **Theme** | Custom Vantablack cyberpunk color palette |
 
-### Palette constants (Rust)
+## Visual Design
 
-```rust
-const VANTABLACK: Color = Color::Rgb(0, 0, 0);       // Pure Black
-const NEON_GREEN: Color = Color::Rgb(0, 255, 65);    // Primary Text
-const DIM_GREEN: Color = Color::Rgb(0, 100, 25);     // Inactive/Borders
-const CYBER_CYAN: Color = Color::Rgb(0, 255, 255);   // Keywords/Registers
-const ALERT_RED: Color = Color::Rgb(255, 0, 50);     // Segfaults/Errors
+### Vantablack Color Palette
+
+```
+VANTABLACK (0, 0, 0)      → Pure black background
+NEON_GREEN (0, 255, 65)   → Primary text and code
+DIM_GREEN (0, 100, 25)    → Borders and inactive elements
+CYBER_CYAN (0, 255, 255)  → Keywords, registers, titles
+ALERT_RED (255, 0, 50)    → Errors and warnings
 ```
 
-### Pane style rules
+### Layout
 
-- `C` editor and `ASM` view: background `VANTABLACK`.
-- `SUBTITLE`/title text: `CYBER_CYAN` + `Modifier::BOLD`.
-- Borders: thick or rounded with `DIM_GREEN` color.
-- C editor text: `NEON_GREEN`.
-- ASM hex/instruction text: AI choreography where `mov/push/pop/add/sub` is `CYBER_CYAN`, directives (`.` prefix) are `DarkGray`, everything else is `NEON_GREEN`.
+- **Left Pane**: Editable C source with syntax highlighting
+- **Right Pane**: Read-only assembly with instruction highlighting
+- **Footer**: Mode indicator, binary info, RSP register, follow-mode status
 
-### Footer pulse bar style
+## Development
 
-- Base line: top border `DIM_GREEN`.
-- Status chunk: inverted style (`NEON_GREEN` background, `VANTABLACK` foreground).
-- RSP field: `CYBER_CYAN`.
-- Error statuses: `ALERT_RED`.
+All build tasks are defined in the Makefile:
 
-### Example layout code
-
-```rust
-let c_pane = Paragraph::new(c_code)
-    .style(Style::default().bg(VANTABLACK).fg(NEON_GREEN))
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Thick)
-            .border_style(Style::default().fg(DIM_GREEN))
-            .title(Span::styled(" SOURCE [C] ", Style::default().fg(CYBER_CYAN).add_modifier(Modifier::BOLD)))
-    );
-
-let asm_pane = Paragraph::new(asm_lines)
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(DIM_GREEN))
-            .title(Span::styled(" ASSEMBLY [ASM] ", Style::default().fg(CYBER_CYAN).add_modifier(Modifier::BOLD)))
-    );
-
-let pulse_bar = Paragraph::new(pulse_line)
-    .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM_GREEN)));
+```bash
+make build      # Build (debug)
+make release    # Build (optimized)
+make run        # Build and run with example.c
+make test       # Run tests
+make check      # Check without building
+make fmt        # Format code
+make clippy     # Run clippy linter
+make asm        # Generate assembly from example.c
+make clean      # Clean build artifacts
+make help       # Show all targets
 ```
 
-> Ensure your project imports the required Ratatui types:
-> `use ratatui::style::{Color, Modifier, Style};`
-> `use ratatui::widgets::{Block, Borders, BorderType, Paragraph, Wrap};`
-> `use ratatui::text::{Line, Span};`
+## Implementation Details
 
+Core modules:
+- **`main.rs`** — Application entry point and event loop
+- **`compiler.rs`** — GCC invocation and `.loc` directive parsing
+- **`watcher.rs`** — File monitoring and change detection
+- **`highlighter.rs`** — Syntax highlighting and color management
+
+See `compiler.rs::parse_loc_directives()` for the mapping algorithm implementation.
+
+## Notes
+
+- Search functionality (`/`) is shown in help but not yet implemented
+- Most accurate results at `-O0`; higher optimization levels may reorder/eliminate instructions
+- Best compatibility with x86-64 Linux/macOS systems
+
+---
+
+**Built with Rust + GCC + Ratatui**

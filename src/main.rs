@@ -27,10 +27,6 @@ const VANTABLACK: Color = Color::Rgb(0, 0, 0);
 const NEON_GREEN: Color = Color::Rgb(0, 255, 65);
 const CYBER_CYAN: Color = Color::Rgb(0, 255, 255);
 const DIM_GREEN: Color = Color::Rgb(0, 100, 25);
-const ALERT_RED: Color = Color::Rgb(255, 0, 50);
-const YELLOW: Color = Color::Rgb(255, 255, 0);
-const ORANGE: Color = Color::Rgb(255, 100, 0);
-const DARK_GRAY: Color = Color::Rgb(80, 80, 80);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum Focus {
@@ -176,24 +172,39 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let mut asm_lines = highlighter::highlight_asm(&asm_text);
 
             let source_cursor_line = (textarea.cursor().0 + 1) as usize;
-            let selected_asm_lines = asm_loc_map.get(&source_cursor_line);
+            // Resolve the source line used for ASM mapping.
+            // If the exact cursor line has no `.loc`, fall back to the nearest previous mapped line.
+            let mapped_source_line = if asm_loc_map.contains_key(&source_cursor_line) {
+                Some(source_cursor_line)
+            } else {
+                let mut mapped = None;
+                for offset in 1..=source_cursor_line {
+                    let candidate = source_cursor_line.saturating_sub(offset);
+                    if asm_loc_map.contains_key(&candidate) {
+                        mapped = Some(candidate);
+                        break;
+                    }
+                }
+                mapped
+            };
 
+            let selected_asm_lines = mapped_source_line.and_then(|line| asm_loc_map.get(&line));
+
+            // Highlight all assembly lines that correspond to the current C line
             if let Some(lines) = selected_asm_lines {
-                for &selected in lines {
-                    if (selected as usize) < asm_lines.len() {
-                        // Apply background highlight to all spans in this line
-                        for span in &mut asm_lines[selected as usize].spans {
-                            span.style = span.style.bg(Color::Rgb(5, 30, 15));
+                for &asm_line_idx in lines {
+                    if (asm_line_idx as usize) < asm_lines.len() {
+                        for span in &mut asm_lines[asm_line_idx as usize].spans {
+                            span.style = span.style.bg(Color::Rgb(0, 200, 100)).add_modifier(Modifier::BOLD);
                         }
                     }
                 }
             }
 
             if follow_mode {
-                asm_scroll = selected_asm_lines
-                    .and_then(|lines| lines.first().cloned())
-                    .map(|line| line as u16)
-                    .unwrap_or_else(|| (source_cursor_line.saturating_sub(1) as u16).min(asm_max_scroll(&asm_text)));
+                if let Some(line) = selected_asm_lines.and_then(|lines| lines.first()).cloned() {
+                    asm_scroll = (line as u16).min(asm_max_scroll(&asm_text));
+                }
             }
 
             let asm_text_view = Text::from(asm_lines);

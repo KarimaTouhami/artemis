@@ -23,7 +23,7 @@ lazy_static::lazy_static! {
     ).unwrap();
 }
 
-pub fn highlight_asm(asm: &str) -> Vec<Line> {
+pub fn highlight_asm(asm: &str) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     for line in asm.lines() {
@@ -34,7 +34,7 @@ pub fn highlight_asm(asm: &str) -> Vec<Line> {
             let m = caps.get(0).unwrap();
             if m.start() > last {
                 spans.push(Span::styled(
-                    &line[last..m.start()],
+                    line[last..m.start()].to_string(),
                     Style::default().fg(NEON_GREEN).bg(VANTABLACK),
                 ));
             }
@@ -53,26 +53,26 @@ pub fn highlight_asm(asm: &str) -> Vec<Line> {
                 Style::default().fg(NEON_GREEN).bg(VANTABLACK)
             };
 
-            spans.push(Span::styled(m.as_str(), style));
+            spans.push(Span::styled(m.as_str().to_string(), style));
             last = m.end();
         }
 
         if last < line.len() {
             spans.push(Span::styled(
-                &line[last..],
+                line[last..].to_string(),
                 Style::default().fg(NEON_GREEN).bg(VANTABLACK),
             ));
         }
 
         if spans.is_empty() {
-            spans.push(Span::styled("", Style::default().bg(VANTABLACK)));
+            spans.push(Span::styled("".to_string(), Style::default().bg(VANTABLACK)));
         }
 
         lines.push(Line::from(spans));
     }
 
     if lines.is_empty() {
-        lines.push(Line::from(vec![Span::styled("", Style::default().bg(VANTABLACK))]));
+        lines.push(Line::from(vec![Span::styled("".to_string(), Style::default().bg(VANTABLACK))]));
     }
 
     lines

@@ -9,6 +9,12 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::{sleep_until, Instant, Duration};
 
+#[derive(Debug, Clone)]
+pub struct CompileOutput {
+    pub asm_text: String,
+    pub line_map: HashMap<usize, Vec<usize>>,
+}
+
 #[derive(Clone)]
 #[allow(dead_code)]
 pub struct CompileState {
@@ -89,32 +95,18 @@ impl Compiler {
             String::from_utf8_lossy(&output.stderr).to_string()
         };
 
+        let (asm_content, index_map) = clean_assembly(&asm_content);
         let line_map = if output.status.success() {
-            Self::parse_loc_directives(&asm_content)
+            build_loc_instruction_map(&asm_content, &index_map)
         } else {
             HashMap::new()
         };
 
-        let (asm_content, index_map) = clean_assembly(&asm_content);
-
-        // Adjust line map indices based on cleaning
-        let mut adjusted_line_map = HashMap::new();
-        for (c_line, asm_lines) in line_map {
-            let mut new_asm_lines = Vec::new();
-            for old_idx in asm_lines {
-                if let Some(&new_idx) = index_map.get(&old_idx) {
-                    new_asm_lines.push(new_idx);
-                }
-            }
-            if !new_asm_lines.is_empty() {
-                adjusted_line_map.insert(c_line, new_asm_lines);
-            }
-        }
         let mut state = self.state.write().await;
         state.c_content = c_content;
         state.asm_content = asm_content;
         state.last_status = status.to_string();
-        state.line_map = adjusted_line_map;
+        state.line_map = line_map;
         state.mock_rsp = state.mock_rsp.wrapping_sub(8);
 
         Ok(())
@@ -152,7 +144,7 @@ impl Compiler {
 
 pub async fn spawn_compiler_worker(
     mut source_rx: mpsc::Receiver<String>,
-    asm_tx: mpsc::Sender<String>,
+    asm_tx: mpsc::Sender<CompileOutput>,
 ) {
     let mut pending: Option<String> = None;
     let mut deadline: Option<Instant> = None;
@@ -178,15 +170,18 @@ pub async fn spawn_compiler_worker(
             } => {
                 if let Some(src) = pending.take() {
                     deadline = None;
-                    let asm = compile_to_asm(src).await.unwrap_or_else(|e| format!("; compile failed: {}", e));
-                    let _ = asm_tx.send(asm).await;
+                    let output = compile_to_asm(src).await.unwrap_or_else(|e| CompileOutput {
+                        asm_text: format!("; compile failed: {}", e),
+                        line_map: HashMap::new(),
+                    });
+                    let _ = asm_tx.send(output).await;
                 }
             }
         }
     }
 }
 
-async fn compile_to_asm(src: String) -> Result<String, String> {
+async fn compile_to_asm(src: String) -> Result<CompileOutput, String> {
     let mut child = tokio::process::Command::new("gcc")
         .arg("-x")
         .arg("c")
@@ -214,8 +209,31 @@ async fn compile_to_asm(src: String) -> Result<String, String> {
         return Err(format!("gcc failed: {}", stderr));
     }
     let out = String::from_utf8_lossy(&output.stdout).to_string();
-    let (cleaned, _) = clean_assembly(&out);
-    Ok(cleaned)
+    let (cleaned, index_map) = clean_assembly(&out);
+    let adjusted_line_map = build_loc_instruction_map(&out, &index_map);
+
+    Ok(CompileOutput {
+        asm_text: cleaned,
+        line_map: adjusted_line_map,
+    })
+}
+
+fn build_loc_instruction_map(asm: &str, index_map: &HashMap<usize, usize>) -> HashMap<usize, Vec<usize>> {
+    let mut map: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut current_c_line: Option<usize> = None;
+
+    for (old_idx, line) in asm.lines().enumerate() {
+        if let Some(c_line) = Compiler::extract_loc_line(line) {
+            current_c_line = Some(c_line);
+            continue;
+        }
+
+        if let (Some(c_line), Some(&new_idx)) = (current_c_line, index_map.get(&old_idx)) {
+            map.entry(c_line).or_default().push(new_idx);
+        }
+    }
+
+    map
 }
 
 /// Filters out debug metadata and clutter from assembly output

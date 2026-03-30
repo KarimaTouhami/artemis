@@ -22,6 +22,7 @@ use tui_textarea::{Input, TextArea};
 
 mod compiler;
 mod highlighter;
+use compiler::CompileOutput;
 
 const VANTABLACK: Color = Color::Rgb(0, 0, 0);
 const NEON_GREEN: Color = Color::Rgb(0, 255, 65);
@@ -36,22 +37,6 @@ enum Focus {
 
 fn asm_max_scroll(asm_text: &str) -> u16 {
     asm_text.lines().count().saturating_sub(1) as u16
-}
-
-fn parse_loc_directives(asm_text: &str) -> HashMap<usize, Vec<usize>> {
-    let mut map: HashMap<usize, Vec<usize>> = HashMap::new();
-    for (idx, line) in asm_text.lines().enumerate() {
-        let trimmed = line.trim();
-        if trimmed.starts_with(".loc") {
-            let parts: Vec<&str> = trimmed.split_whitespace().collect();
-            if parts.len() >= 3 {
-                if let Ok(line_num) = parts[2].parse::<usize>() {
-                    map.entry(line_num).or_default().push(idx);
-                }
-            }
-        }
-    }
-    map
 }
 
 fn handle_asm_navigation(key_event: crossterm::event::KeyEvent, asm_text: &str, asm_scroll: &mut u16) -> bool {
@@ -140,7 +125,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     textarea.set_style(Style::default().fg(NEON_GREEN).bg(VANTABLACK));
 
     let (source_tx, source_rx) = mpsc::channel::<String>(8);
-    let (asm_tx, mut asm_rx) = mpsc::channel::<String>(8);
+    let (asm_tx, mut asm_rx) = mpsc::channel::<CompileOutput>(8);
     tokio::spawn(async move {
         compiler::spawn_compiler_worker(source_rx, asm_tx).await;
     });
@@ -195,7 +180,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 for &asm_line_idx in lines {
                     if (asm_line_idx as usize) < asm_lines.len() {
                         for span in &mut asm_lines[asm_line_idx as usize].spans {
-                            span.style = span.style.bg(Color::Rgb(0, 200, 100)).add_modifier(Modifier::BOLD);
+                            span.style = span.style.bg(Color::Rgb(0, 70, 35));
                         }
                     }
                 }
@@ -275,9 +260,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         })?;
 
         if let Ok(new_asm) = tokio::time::timeout(Duration::from_millis(10), asm_rx.recv()).await {
-            if let Some(s) = new_asm {
-                asm_text = s;
-                asm_loc_map = parse_loc_directives(&asm_text);
+            if let Some(output) = new_asm {
+                asm_text = output.asm_text;
+                asm_loc_map = output.line_map;
 
                 if follow_mode {
                     let source_cursor_line = textarea.cursor().0 + 1; // convert to 1-based location

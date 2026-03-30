@@ -10,9 +10,10 @@ use crossterm::{
 };
 use ratatui::{
     backend::CrosstermBackend,
+    layout::Alignment,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    text::{Text, Line},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, BorderType, Paragraph},
     Terminal,
 };
@@ -103,6 +104,50 @@ fn handle_asm_navigation(key_event: crossterm::event::KeyEvent, asm_text: &str, 
     }
 }
 
+fn startup_splash_text() -> Text<'static> {
+    Text::from(vec![
+        Line::from(Span::styled("   ___         __                _     ", Style::default().fg(CYBER_CYAN).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled("  / _ |  ____ / /____ __ _  ___ (_)___ ", Style::default().fg(CYBER_CYAN).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(r" / __ | / __// __/ -_)  ' \/ -_)/ (_-< ", Style::default().fg(NEON_GREEN).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(r"/_/ |_|/_/   \__/\__/_/_/_/\__//_/___/ ", Style::default().fg(NEON_GREEN).add_modifier(Modifier::BOLD))),
+        Line::from(""),
+        Line::from(Span::styled("      LIVE C -> ASM // CYBER TERMINAL", Style::default().fg(DIM_GREEN))),
+    ])
+}
+
+fn draw_startup_splash(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<(), Box<dyn Error>> {
+    let splash_text = startup_splash_text();
+
+    terminal.draw(|f| {
+        let size = f.area();
+        let frame = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Thick)
+            .border_style(Style::default().fg(CYBER_CYAN))
+            .style(Style::default().bg(VANTABLACK))
+            .title(" ARTEMIS ");
+
+        let inner = frame.inner(size);
+        let vertical = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Fill(1),
+                Constraint::Length(6),
+                Constraint::Fill(1),
+            ])
+            .split(inner);
+
+        let splash = Paragraph::new(splash_text.clone())
+            .style(Style::default().bg(VANTABLACK))
+            .alignment(Alignment::Center);
+
+        f.render_widget(frame, size);
+        f.render_widget(splash, vertical[1]);
+    })?;
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     enable_raw_mode()?;
@@ -110,6 +155,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+
+    draw_startup_splash(&mut terminal)?;
+    tokio::time::sleep(Duration::from_millis(3000)).await;
 
     let source_path = std::env::args().nth(1).unwrap_or_else(|| "example.c".into());
     let source_content = std::fs::read_to_string(&source_path).unwrap_or_default();

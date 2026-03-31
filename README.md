@@ -185,6 +185,12 @@ See `compiler.rs::parse_loc_directives()` for the mapping algorithm implementati
 - Most accurate results at `-O0`; higher optimization levels may reorder/eliminate instructions
 - Best compatibility with x86-64 Linux/macOS systems
 
+## Legal
+
+- Copyright (c) 2026 Karima Touhami.
+- Selling or other commercial use requires prior written permission.
+- See LICENSE for full terms.
+
 ---
 
 **Built with Rust + GCC + Ratatui**

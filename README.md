@@ -14,6 +14,8 @@ Artemis is an interactive terminal application that synchronizes C source code w
 
 ✨ **Live Editing** — Modify C code and see assembly recompile instantly (300ms debounce)  
 🎯 **Precise Mapping** — DWARF debug symbols map each C line to its assembly equivalent  
+🔦 **Instruction Highlighting** — Cursor-follow mapping highlights the corresponding assembly block  
+🔎 **Source Search Mode** — In-editor search with next/previous navigation and viewport-following jumps  
 🌙 **Built-in Theme** — "Vantablack" high-contrast color scheme for focused work  
 ⚡ **Zero Bloat** — Minimal dependencies: just Rust and GCC  
 🛡️ **Smart Compilation** — Handles optimization levels, inlining, and real-world patterns
@@ -63,10 +65,20 @@ The application opens with your C code on the left and generated assembly on the
 |-----|--------|
 | `q` | Quit |
 | `?` | Show help |
-| `Tab` / `Shift+Tab` | Switch panes |
+| `Esc`, then `Tab` / `Shift+Tab` | Switch panes |
 | `Ctrl+s` | Save file |
 | `r` | Reload from disk |
 | `F5` | Toggle follow-mode |
+
+**Search Mode (source pane):**
+| Key | Action |
+|-----|--------|
+| `/` | Enter search query mode |
+| `Enter` | Run search and jump to next match from cursor |
+| `n` / `N` | Next / previous match |
+| `Up` / `Down` | Previous / next match while query mode is open |
+| `PgUp` / `PgDn` | Previous / next match while query mode is open |
+| `Esc` | Exit search query mode |
 
 **Assembly Pane (when focused):**
 | Key | Action |
@@ -109,7 +121,7 @@ Generates assembly with mapping:
 
 1. Parse the generated `.s` file for `.loc` directives
 2. Build a map: `C_line → [ASM_line indices]`
-3. When cursor is at C line N, highlight corresponding ASM instructions
+3. When cursor is at C line N, highlight corresponding ASM instruction block
 4. Handle edge cases: inlining, loop unrolling, optimization effects
 
 ### GCC Compilation Flags
@@ -150,7 +162,7 @@ ALERT_RED (255, 0, 50)    → Errors and warnings
 
 - **Left Pane**: Editable C source with syntax highlighting
 - **Right Pane**: Read-only assembly with instruction highlighting
-- **Footer**: Mode indicator, binary info, RSP register, follow-mode status
+- **Footer**: Mode indicator, focus, follow-mode state, and assembly scroll/search status
 
 ## Development
 
@@ -177,11 +189,11 @@ Core modules:
 - **`watcher.rs`** — File monitoring and change detection
 - **`highlighter.rs`** — Syntax highlighting and color management
 
-See `compiler.rs::parse_loc_directives()` for the mapping algorithm implementation.
+See `compiler.rs::build_loc_instruction_map()` for the mapping algorithm implementation.
 
 ## Notes
 
-- Search functionality (`/`) is shown in help but not yet implemented
+- Search mode is case-insensitive and supports incremental query updates
 - Most accurate results at `-O0`; higher optimization levels may reorder/eliminate instructions
 - Best compatibility with x86-64 Linux/macOS systems
 

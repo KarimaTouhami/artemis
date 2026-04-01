@@ -19,7 +19,7 @@ use ratatui::{
 };
 use tokio::sync::mpsc;
 
-use tui_textarea::{Input, TextArea};
+use tui_textarea::{CursorMove, Input, TextArea};
 
 mod compiler;
 mod highlighter;
@@ -34,6 +34,88 @@ const DIM_GREEN: Color = Color::Rgb(0, 100, 25);
 enum Focus {
     Source,
     Assembly,
+}
+
+#[derive(Default)]
+struct SearchState {
+    active: bool,
+    query: String,
+    matches: Vec<(usize, usize)>,
+    current_match: usize,
+}
+
+impl SearchState {
+    fn has_query(&self) -> bool {
+        !self.query.is_empty()
+    }
+}
+
+fn rebuild_search_matches(lines: &[String], query: &str) -> Vec<(usize, usize)> {
+    if query.is_empty() {
+        return Vec::new();
+    }
+
+    let needle = query.to_lowercase();
+    let mut matches = Vec::new();
+
+    for (row, line) in lines.iter().enumerate() {
+        let lower = line.to_lowercase();
+        let mut from = 0;
+
+        while let Some(pos) = lower[from..].find(&needle) {
+            let col = from + pos;
+            matches.push((row, col));
+            from = col + needle.len();
+            if from >= lower.len() {
+                break;
+            }
+        }
+    }
+
+    matches
+}
+
+fn jump_to_search_match(textarea: &mut TextArea<'_>, search: &mut SearchState, forward: bool) -> bool {
+    if search.matches.is_empty() {
+        return false;
+    }
+
+    if forward {
+        search.current_match = (search.current_match + 1) % search.matches.len();
+    } else if search.current_match == 0 {
+        search.current_match = search.matches.len() - 1;
+    } else {
+        search.current_match -= 1;
+    }
+
+    let (row, col) = search.matches[search.current_match];
+    textarea.move_cursor(CursorMove::Jump(row as u16, col as u16));
+    textarea.move_cursor(CursorMove::InViewport);
+    true
+}
+
+fn execute_search_from_cursor(textarea: &mut TextArea<'_>, search: &mut SearchState) -> bool {
+    search.matches = rebuild_search_matches(&textarea.lines(), &search.query);
+    if search.matches.is_empty() {
+        search.current_match = 0;
+        return false;
+    }
+
+    let (cur_row, cur_col) = textarea.cursor();
+    let mut chosen = 0;
+
+    for (idx, &(row, col)) in search.matches.iter().enumerate() {
+        if row > cur_row || (row == cur_row && col >= cur_col) {
+            chosen = idx;
+            break;
+        }
+    }
+
+    search.current_match = chosen;
+    let (row, col) = search.matches[search.current_match];
+    textarea.move_cursor(CursorMove::Jump(row as u16, col as u16));
+    textarea.move_cursor(CursorMove::InViewport);
+    true
 }
 
 fn asm_max_scroll(asm_text: &str) -> u16 {
@@ -186,6 +268,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut asm_scroll: u16 = 0;
     let mut follow_mode = true;
     let mut focus_switch_armed = false;
+    let mut search = SearchState::default();
 
     source_tx.send(textarea.lines().join("\n")).await.ok();
 
@@ -287,7 +370,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Line::from("  Ctrl+S: Save"),
                     Line::from("  r: Reload file"),
                     Line::from("  F5: Toggle follow mode"),
-                    Line::from("  /: Search mode (placeholder currently)")
+                    Line::from("  /: Start search in source"),
+                    Line::from("  Enter: Confirm search"),
+                    Line::from("  n / N: Next / previous search result"),
+                    Line::from("  Esc: Exit search")
                 ]);
                 let overlay = Paragraph::new(help_text)
                     .style(Style::default().bg(VANTABLACK).fg(NEON_GREEN))
@@ -352,8 +438,90 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     continue;
                 }
 
+                if search.active {
+                    match key_event.code {
+                        KeyCode::Esc => {
+                            search.active = false;
+                            status_msg = if search.has_query() {
+                                format!("SEARCH ready: '{}' | Enter to run | Esc to exit", search.query)
+                            } else {
+                                "SEARCH canceled".to_string()
+                            };
+                        }
+                        KeyCode::Enter => {
+                            search.active = false;
+                            if search.has_query() && execute_search_from_cursor(&mut textarea, &mut search) {
+                                status_msg = format!("SEARCH: '{}' ({}/{})", search.query, search.current_match + 1, search.matches.len());
+                            } else {
+                                status_msg = if search.has_query() {
+                                    format!("SEARCH: '{}' (no matches)", search.query)
+                                } else {
+                                    "SEARCH: empty query".to_string()
+                                };
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            search.query.pop();
+                            status_msg = format!("SEARCH query: '{}' | Enter to run", search.query);
+                        }
+                        KeyCode::Down | KeyCode::PageDown => {
+                            if !search.has_query() {
+                                status_msg = "SEARCH: type a query first".to_string();
+                            } else if execute_search_from_cursor(&mut textarea, &mut search) {
+                                status_msg = format!("SEARCH: '{}' ({}/{})", search.query, search.current_match + 1, search.matches.len());
+                            } else {
+                                status_msg = format!("SEARCH: '{}' (no matches)", search.query);
+                            }
+                        }
+                        KeyCode::Up | KeyCode::PageUp => {
+                            if !search.has_query() {
+                                status_msg = "SEARCH: type a query first".to_string();
+                            } else if execute_search_from_cursor(&mut textarea, &mut search) {
+                                if jump_to_search_match(&mut textarea, &mut search, false) {
+                                    status_msg = format!("SEARCH: '{}' ({}/{})", search.query, search.current_match + 1, search.matches.len());
+                                }
+                            } else {
+                                status_msg = format!("SEARCH: '{}' (no matches)", search.query);
+                            }
+                        }
+                        KeyCode::Char(c) if key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT => {
+                            search.query.push(c);
+                            status_msg = format!("SEARCH query: '{}' | Enter to run", search.query);
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
+
                 if key_event.code == KeyCode::Char('/') && key_event.modifiers.is_empty() {
-                    status_msg = "SEARCH mode is not implemented; use source editor techniques".to_string();
+                    search.active = true;
+                    status_msg = if search.has_query() {
+                        format!("SEARCH query: '{}' | Enter to run", search.query)
+                    } else {
+                        "SEARCH: type query, Enter to run, Esc to cancel".to_string()
+                    };
+                    continue;
+                }
+
+                if key_event.code == KeyCode::Char('n') && key_event.modifiers.is_empty() {
+                    if !search.has_query() {
+                        status_msg = "SEARCH: no active query. Press / to start.".to_string();
+                    } else if search.matches.is_empty() {
+                        status_msg = format!("SEARCH: '{}' (no matches)", search.query);
+                    } else if jump_to_search_match(&mut textarea, &mut search, true) {
+                        status_msg = format!("SEARCH: '{}' ({}/{})", search.query, search.current_match + 1, search.matches.len());
+                    }
+                    continue;
+                }
+
+                if key_event.code == KeyCode::Char('N') && key_event.modifiers == KeyModifiers::SHIFT {
+                    if !search.has_query() {
+                        status_msg = "SEARCH: no active query. Press / to start.".to_string();
+                    } else if search.matches.is_empty() {
+                        status_msg = format!("SEARCH: '{}' (no matches)", search.query);
+                    } else if jump_to_search_match(&mut textarea, &mut search, false) {
+                        status_msg = format!("SEARCH: '{}' ({}/{})", search.query, search.current_match + 1, search.matches.len());
+                    }
                     continue;
                 }
 
@@ -424,6 +592,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 match focus {
                     Focus::Source => {
                         textarea.input(Input::from(key_event));
+                        if search.has_query() {
+                            search.matches = rebuild_search_matches(&textarea.lines(), &search.query);
+                            if search.matches.is_empty() {
+                                search.current_match = 0;
+                            } else {
+                                search.current_match = search.current_match.min(search.matches.len().saturating_sub(1));
+                            }
+                        }
                         status_msg = "MODE: EDIT | RUNTIME: OK".to_string();
                         source_tx.send(textarea.lines().join("\n")).await.ok();
                     }

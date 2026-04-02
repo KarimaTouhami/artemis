@@ -191,6 +191,8 @@ Core modules:
 
 See `compiler.rs::build_loc_instruction_map()` for the mapping algorithm implementation.
 
+![Artemis demo](public/artemis.gif)
+
 ## Notes
 
 - Search mode is case-insensitive and supports incremental query updates

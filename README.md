@@ -12,13 +12,7 @@ Artemis is an interactive terminal application that synchronizes C source code w
 
 ## Features
 
-✨ **Live Editing** — Modify C code and see assembly recompile instantly (300ms debounce)  
-🎯 **Precise Mapping** — DWARF debug symbols map each C line to its assembly equivalent  
-🔦 **Instruction Highlighting** — Cursor-follow mapping highlights the corresponding assembly block  
-🔎 **Source Search Mode** — In-editor search with next/previous navigation and viewport-following jumps  
-🌙 **Built-in Theme** — "Vantablack" high-contrast color scheme for focused work  
-⚡ **Zero Bloat** — Minimal dependencies: just Rust and GCC  
-🛡️ **Smart Compilation** — Handles optimization levels, inlining, and real-world patterns
+Live Editing - Precise Mapping - Instruction Highlighting - Source Search Mode - Built-in Theme - Zero Bloat - Smart Compilation
 
 ## Quick Start
 

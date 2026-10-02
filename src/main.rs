@@ -95,7 +95,7 @@ fn jump_to_search_match(textarea: &mut TextArea<'_>, search: &mut SearchState, f
 }
 
 fn execute_search_from_cursor(textarea: &mut TextArea<'_>, search: &mut SearchState) -> bool {
-    search.matches = rebuild_search_matches(&textarea.lines(), &search.query);
+    search.matches = rebuild_search_matches(textarea.lines(), &search.query);
     if search.matches.is_empty() {
         search.current_match = 0;
         return false;
@@ -277,7 +277,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let size = f.area();
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Length(size.height - 3), Constraint::Length(3)].as_ref())
+                .constraints([Constraint::Length(size.height.saturating_sub(3)), Constraint::Length(3)].as_ref())
                 .split(size);
 
             let top = Layout::default()
@@ -309,8 +309,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             // Highlight all assembly lines that correspond to the current C line
             if let Some(lines) = selected_asm_lines {
                 for &asm_line_idx in lines {
-                    if (asm_line_idx as usize) < asm_lines.len() {
-                        for span in &mut asm_lines[asm_line_idx as usize].spans {
+                    if asm_line_idx < asm_lines.len() {
+                        for span in &mut asm_lines[asm_line_idx].spans {
                             span.style = span.style.bg(Color::Rgb(0, 70, 35));
                         }
                     }
@@ -393,22 +393,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
             f.render_widget(status, chunks[1]);
         })?;
 
-        if let Ok(new_asm) = tokio::time::timeout(Duration::from_millis(10), asm_rx.recv()).await {
-            if let Some(output) = new_asm {
-                asm_text = output.asm_text;
-                asm_loc_map = output.line_map;
+        if let Ok(Some(output)) = tokio::time::timeout(Duration::from_millis(10), asm_rx.recv()).await {
+            asm_text = output.asm_text;
+            asm_loc_map = output.line_map;
 
-                if follow_mode {
-                    let source_cursor_line = textarea.cursor().0 + 1; // convert to 1-based location
-                    asm_scroll = if let Some(asm_lines) = asm_loc_map.get(&source_cursor_line) {
-                        *asm_lines.first().unwrap_or(&0) as u16
-                    } else {
-                        // fallback: keep source cursor line if no mapping available
-                        (source_cursor_line.saturating_sub(1) as u16).min(asm_max_scroll(&asm_text))
-                    };
+            if follow_mode {
+                let source_cursor_line = textarea.cursor().0 + 1; // convert to 1-based location
+                asm_scroll = if let Some(asm_lines) = asm_loc_map.get(&source_cursor_line) {
+                    *asm_lines.first().unwrap_or(&0) as u16
                 } else {
-                    asm_scroll = asm_scroll.min(asm_max_scroll(&asm_text));
-                }
+                    // fallback: keep source cursor line if no mapping available
+                    (source_cursor_line.saturating_sub(1) as u16).min(asm_max_scroll(&asm_text))
+                };
+            } else {
+                asm_scroll = asm_scroll.min(asm_max_scroll(&asm_text));
             }
         }
 
@@ -593,7 +591,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Focus::Source => {
                         textarea.input(Input::from(key_event));
                         if search.has_query() {
-                            search.matches = rebuild_search_matches(&textarea.lines(), &search.query);
+                            search.matches = rebuild_search_matches(textarea.lines(), &search.query);
                             if search.matches.is_empty() {
                                 search.current_match = 0;
                             } else {

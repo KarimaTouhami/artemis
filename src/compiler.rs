@@ -119,7 +119,7 @@ impl Compiler {
         for (asm_line_idx, line) in asm_content.lines().enumerate() {
             if let Some(c_line) = Self::extract_loc_line(line) {
                 map.entry(c_line)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(asm_line_idx);
             }
         }
@@ -280,7 +280,7 @@ fn clean_assembly(asm: &str) -> (String, HashMap<usize, usize>) {
     }
 
     // Remove trailing empty lines
-    while result.last().map_or(false, |l| l.trim().is_empty()) {
+    while result.last().is_some_and(|l| l.trim().is_empty()) {
         result.pop();
     }
 

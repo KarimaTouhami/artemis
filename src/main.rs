@@ -4,6 +4,7 @@ use std::error::Error;
 use std::time::Duration;
 
 use crossterm::{
+    cursor,
     event::{self, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -252,11 +253,26 @@ fn draw_startup_splash(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>
     Ok(())
 }
 
+/// Restores the tty on unwind. Without this, any `?` between entering raw mode
+/// and the end of `main`, or any panic, leaves the shell without echo and the
+/// alternate screen still active -- the user has to `reset` their terminal.
+struct TerminalGuard;
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let mut out = std::io::stdout();
+        let _ = disable_raw_mode();
+        let _ = execute!(out, LeaveAlternateScreen);
+        let _ = execute!(out, cursor::Show);
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
+    let _terminal_guard = TerminalGuard;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -643,8 +659,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
+    // Terminal state is restored by _terminal_guard on the way out.
     Ok(())
 }

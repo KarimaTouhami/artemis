@@ -211,10 +211,10 @@ fn handle_asm_navigation(
 
 fn startup_splash_text() -> Text<'static> {
     Text::from(vec![
-        Line::from(Span::styled("   ___         __                _     ", Style::default().fg(CYBER_CYAN).add_modifier(Modifier::BOLD))),
-        Line::from(Span::styled("  / _ |  ____ / /____ __ _  ___ (_)___ ", Style::default().fg(CYBER_CYAN).add_modifier(Modifier::BOLD))),
-        Line::from(Span::styled(r" / __ | / __// __/ -_)  ' \/ -_)/ (_-< ", Style::default().fg(NEON_GREEN).add_modifier(Modifier::BOLD))),
-        Line::from(Span::styled(r"/_/ |_|/_/   \__/\__/_/_/_/\__//_/___/ ", Style::default().fg(NEON_GREEN).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled("   ___         __                    ____  _      ", Style::default().fg(CYBER_CYAN).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled("  / _ |  ____ / /____ __ _  ___ (   /  _/  _)___  ", Style::default().fg(CYBER_CYAN).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(r" / __ | / __// __/ -_)  ' \/ -_)/  _/ /   (_-<    ", Style::default().fg(NEON_GREEN).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(r"/_/ |_|/_/   \__/\__/_/_/_/\__//_ /___/  /___/    ", Style::default().fg(NEON_GREEN).add_modifier(Modifier::BOLD))),
         Line::from(""),
         Line::from(Span::styled("      LIVE C -> ASM // CYBER TERMINAL", Style::default().fg(DIM_GREEN))),
     ])

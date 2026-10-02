@@ -193,6 +193,10 @@ See `compiler.rs::build_loc_instruction_map()` for the mapping algorithm impleme
 - Most accurate results at `-O0`; higher optimization levels may reorder/eliminate instructions
 - Best compatibility with x86-64 Linux/macOS systems
 
+## Legal
+
+- Released under the MIT License. See [LICENSE](LICENSE) for full terms.
+
 ---
 
 **Built with Rust + GCC + Ratatui**

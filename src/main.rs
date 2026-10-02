@@ -210,14 +210,35 @@ fn handle_asm_navigation(
 }
 
 fn startup_splash_text() -> Text<'static> {
-    Text::from(vec![
-        Line::from(Span::styled("   ___         __                    ____  _      ", Style::default().fg(CYBER_CYAN).add_modifier(Modifier::BOLD))),
-        Line::from(Span::styled("  / _ |  ____ / /____ __ _  ___ (   /  _/  _)___  ", Style::default().fg(CYBER_CYAN).add_modifier(Modifier::BOLD))),
-        Line::from(Span::styled(r" / __ | / __// __/ -_)  ' \/ -_)/  _/ /   (_-<    ", Style::default().fg(NEON_GREEN).add_modifier(Modifier::BOLD))),
-        Line::from(Span::styled(r"/_/ |_|/_/   \__/\__/_/_/_/\__//_ /___/  /___/    ", Style::default().fg(NEON_GREEN).add_modifier(Modifier::BOLD))),
-        Line::from(""),
-        Line::from(Span::styled("      LIVE C -> ASM // CYBER TERMINAL", Style::default().fg(DIM_GREEN))),
-    ])
+    const ART: [&str; 7] = [
+        r"      ██     ▀███▀▀▀██▄ ███▀▀██▀▀██████▀▀▀███▀████▄     ▄███▀████▀▄█▀▀▀█▄█",
+        r"     ▄██▄      ██   ▀██▄█▀   ██   ▀█ ██    ▀█  ████    ████   ██ ▄██    ▀█",
+        r"    ▄█▀██▄     ██   ▄██      ██      ██   █    █ ██   ▄█ ██   ██ ▀███▄    ",
+        r"   ▄█  ▀██     ███████       ██      ██████    █  ██  █▀ ██   ██   ▀█████▄",
+        r"   ████████    ██  ██▄       ██      ██   █  ▄ █  ██▄█▀  ██   ██ ▄     ▀██",
+        r"  █▀      ██   ██   ▀██▄     ██      ██     ▄█ █  ▀██▀   ██   ██ ██     ██",
+        r"▄███▄   ▄████▄████▄ ▄███▄  ▄████▄  ▄█████████████▄ ▀▀  ▄████▄████▄▀█████▀",
+    ];
+
+    let mut lines: Vec<Line<'static>> = ART
+        .iter()
+        .enumerate()
+        .map(|(row, art)| {
+            let color = if row < 4 { CYBER_CYAN } else { NEON_GREEN };
+            Line::from(Span::styled(
+                *art,
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            ))
+        })
+        .collect();
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "                     LIVE C -> ASM // CYBER TERMINAL",
+        Style::default().fg(DIM_GREEN),
+    )));
+
+    Text::from(lines)
 }
 
 fn draw_startup_splash(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<(), Box<dyn Error>> {
@@ -237,7 +258,7 @@ fn draw_startup_splash(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Fill(1),
-                Constraint::Length(6),
+                Constraint::Length(9),
                 Constraint::Fill(1),
             ])
             .split(inner);

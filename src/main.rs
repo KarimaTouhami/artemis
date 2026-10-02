@@ -94,7 +94,7 @@ fn jump_to_search_match(textarea: &mut TextArea<'_>, search: &mut SearchState, f
     true
 }
 
-fn execute_search_from_cursor(textarea: &mut TextArea<'_>, search: &mut SearchState) -> bool {
+fn search_from_cursor(textarea: &mut TextArea<'_>, search: &mut SearchState, forward: bool) -> bool {
     search.matches = rebuild_search_matches(textarea.lines(), &search.query);
     if search.matches.is_empty() {
         search.current_match = 0;
@@ -102,28 +102,50 @@ fn execute_search_from_cursor(textarea: &mut TextArea<'_>, search: &mut SearchSt
     }
 
     let (cur_row, cur_col) = textarea.cursor();
-    let mut chosen = 0;
 
-    for (idx, &(row, col)) in search.matches.iter().enumerate() {
-        if row > cur_row || (row == cur_row && col >= cur_col) {
-            chosen = idx;
-            break;
-        }
-    }
+    // Compare strictly so a match the cursor already sits on is not re-selected,
+    // which previously made repeated presses a no-op. Wrap at either end.
+    let target = if forward {
+        search
+            .matches
+            .iter()
+            .position(|&(row, col)| row > cur_row || (row == cur_row && col > cur_col))
+    } else {
+        search
+            .matches
+            .iter()
+            .rposition(|&(row, col)| row < cur_row || (row == cur_row && col < cur_col))
+    };
 
-    search.current_match = chosen;
+    search.current_match = match target {
+        Some(idx) => idx,
+        None if forward => 0,
+        None => search.matches.len() - 1,
+    };
+
     let (row, col) = search.matches[search.current_match];
     textarea.move_cursor(CursorMove::Jump(row as u16, col as u16));
     textarea.move_cursor(CursorMove::InViewport);
     true
 }
 
-fn asm_max_scroll(asm_text: &str) -> u16 {
-    asm_text.lines().count().saturating_sub(1) as u16
+fn asm_max_scroll(asm_text: &str, viewport_height: u16) -> u16 {
+    // ratatui scroll offsets are u16, so saturate rather than truncate -- a
+    // plain `as u16` wrapped 70000 lines to 4463.
+    asm_text
+        .lines()
+        .count()
+        .saturating_sub(viewport_height as usize)
+        .min(usize::from(u16::MAX)) as u16
 }
 
-fn handle_asm_navigation(key_event: crossterm::event::KeyEvent, asm_text: &str, asm_scroll: &mut u16) -> bool {
-    let max_scroll = asm_max_scroll(asm_text);
+fn handle_asm_navigation(
+    key_event: crossterm::event::KeyEvent,
+    asm_text: &str,
+    asm_scroll: &mut u16,
+    viewport_height: u16,
+) -> bool {
+    let max_scroll = asm_max_scroll(asm_text, viewport_height);
 
     match key_event.code {
         KeyCode::Up => {
@@ -266,6 +288,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut focus = Focus::Source;
     let mut show_help = false;
     let mut asm_scroll: u16 = 0;
+    let mut asm_viewport_height: u16 = 0;
     let mut follow_mode = true;
     let mut focus_switch_armed = false;
     let mut search = SearchState::default();
@@ -284,6 +307,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
                 .split(chunks[0]);
+
+            asm_viewport_height = top[1].height;
 
             let mut asm_lines = highlighter::highlight_asm(&asm_text);
 
@@ -319,7 +344,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             if follow_mode {
                 if let Some(line) = selected_asm_lines.and_then(|lines| lines.first()).cloned() {
-                    asm_scroll = (line as u16).min(asm_max_scroll(&asm_text));
+                    asm_scroll = (line as u16).min(asm_max_scroll(&asm_text, asm_viewport_height));
                 }
             }
 
@@ -400,13 +425,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
             if follow_mode {
                 let source_cursor_line = textarea.cursor().0 + 1; // convert to 1-based location
                 asm_scroll = if let Some(asm_lines) = asm_loc_map.get(&source_cursor_line) {
-                    *asm_lines.first().unwrap_or(&0) as u16
+                    (*asm_lines.first().unwrap_or(&0) as u16)
+                        .min(asm_max_scroll(&asm_text, asm_viewport_height))
                 } else {
                     // fallback: keep source cursor line if no mapping available
-                    (source_cursor_line.saturating_sub(1) as u16).min(asm_max_scroll(&asm_text))
+                    (source_cursor_line.saturating_sub(1) as u16)
+                        .min(asm_max_scroll(&asm_text, asm_viewport_height))
                 };
             } else {
-                asm_scroll = asm_scroll.min(asm_max_scroll(&asm_text));
+                asm_scroll = asm_scroll.min(asm_max_scroll(&asm_text, asm_viewport_height));
             }
         }
 
@@ -448,7 +475,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                         KeyCode::Enter => {
                             search.active = false;
-                            if search.has_query() && execute_search_from_cursor(&mut textarea, &mut search) {
+                            if search.has_query() && search_from_cursor(&mut textarea, &mut search, true) {
                                 status_msg = format!("SEARCH: '{}' ({}/{})", search.query, search.current_match + 1, search.matches.len());
                             } else {
                                 status_msg = if search.has_query() {
@@ -465,7 +492,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         KeyCode::Down | KeyCode::PageDown => {
                             if !search.has_query() {
                                 status_msg = "SEARCH: type a query first".to_string();
-                            } else if execute_search_from_cursor(&mut textarea, &mut search) {
+                            } else if search_from_cursor(&mut textarea, &mut search, true) {
                                 status_msg = format!("SEARCH: '{}' ({}/{})", search.query, search.current_match + 1, search.matches.len());
                             } else {
                                 status_msg = format!("SEARCH: '{}' (no matches)", search.query);
@@ -474,10 +501,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         KeyCode::Up | KeyCode::PageUp => {
                             if !search.has_query() {
                                 status_msg = "SEARCH: type a query first".to_string();
-                            } else if execute_search_from_cursor(&mut textarea, &mut search) {
-                                if jump_to_search_match(&mut textarea, &mut search, false) {
-                                    status_msg = format!("SEARCH: '{}' ({}/{})", search.query, search.current_match + 1, search.matches.len());
-                                }
+                            } else if search_from_cursor(&mut textarea, &mut search, false) {
+                                status_msg = format!("SEARCH: '{}' ({}/{})", search.query, search.current_match + 1, search.matches.len());
                             } else {
                                 status_msg = format!("SEARCH: '{}' (no matches)", search.query);
                             }
@@ -602,12 +627,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         source_tx.send(textarea.lines().join("\n")).await.ok();
                     }
                     Focus::Assembly => {
-                        let handled = handle_asm_navigation(key_event, &asm_text, &mut asm_scroll);
+                        let handled = handle_asm_navigation(key_event, &asm_text, &mut asm_scroll, asm_viewport_height);
                         if handled {
                             status_msg = format!(
                                 "MODE: VIEW ASM | SCROLL: {}/{}",
                                 asm_scroll,
-                                asm_max_scroll(&asm_text)
+                                asm_max_scroll(&asm_text, asm_viewport_height)
                             );
                         } else {
                             status_msg = "MODE: VIEW ASM | use j/k/u/d/b/f/g/G or arrows".to_string();

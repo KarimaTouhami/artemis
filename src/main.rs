@@ -26,9 +26,9 @@ mod compiler;
 mod highlighter;
 use compiler::CompileOutput;
 
-const VANTABLACK: Color = Color::Rgb(0, 0, 0);
-const NEON_GREEN: Color = Color::Rgb(0, 255, 65);
-const CYBER_CYAN: Color = Color::Rgb(0, 255, 255);
+pub(crate) const VANTABLACK: Color = Color::Rgb(0, 0, 0);
+pub(crate) const NEON_GREEN: Color = Color::Rgb(0, 255, 65);
+pub(crate) const CYBER_CYAN: Color = Color::Rgb(0, 255, 255);
 const DIM_GREEN: Color = Color::Rgb(0, 100, 25);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -306,7 +306,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut asm_scroll: u16 = 0;
     let mut asm_viewport_height: u16 = 0;
     let mut follow_mode = true;
-    let mut focus_switch_armed = false;
     let mut search = SearchState::default();
 
     source_tx.send(textarea.lines().join("\n")).await.ok();
@@ -358,12 +357,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
 
-            if follow_mode {
-                if let Some(line) = selected_asm_lines.and_then(|lines| lines.first()).cloned() {
-                    asm_scroll = (line as u16).min(asm_max_scroll(&asm_text, asm_viewport_height));
-                }
-            }
-
             let asm_text_view = Text::from(asm_lines);
 
             let source_border_style = if focus == Focus::Source {
@@ -406,7 +399,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Line::from("Controls:"),
                     Line::from("  q / Ctrl+C: Quit"),
                     Line::from("  ? : Toggle help"),
-                    Line::from("  Esc then Tab / Shift+Tab: Switch pane"),
+                    Line::from("  Tab / Shift+Tab: Switch pane"),
                     Line::from("  ASM nav: Up/Down/PgUp/PgDn/Home/End or j/k/u/d/b/f/g/G"),
                     Line::from("  Ctrl+S: Save"),
                     Line::from("  r: Reload file"),
@@ -564,16 +557,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     continue;
                 }
 
-                if key_event.code == KeyCode::Esc && key_event.modifiers.is_empty() {
-                    focus_switch_armed = !focus_switch_armed;
-                    status_msg = if focus_switch_armed {
-                        "FOCUS switch armed: press Tab/Shift+Tab".to_string()
-                    } else {
-                        "FOCUS switch canceled".to_string()
-                    };
-                    continue;
-                }
-
                 if key_event.code == KeyCode::F(5) {
                     follow_mode = !follow_mode;
                     status_msg = format!("FOLLOW mode: {}", if follow_mode { "ON" } else { "OFF" });
@@ -600,23 +583,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     continue;
                 }
 
-                if key_event.code == KeyCode::Tab {
-                    if focus_switch_armed {
-                        focus = if focus == Focus::Source { Focus::Assembly } else { Focus::Source };
-                        status_msg = format!("FOCUS -> {:?}", focus);
-                        focus_switch_armed = false;
-                    } else {
-                        status_msg = "Press Esc first, then Tab to switch pane".to_string();
-                    }
-                    continue;
-                } else if key_event.code == KeyCode::BackTab {
-                    if focus_switch_armed {
-                        focus = if focus == Focus::Assembly { Focus::Source } else { Focus::Assembly };
-                        status_msg = format!("FOCUS -> {:?}", focus);
-                        focus_switch_armed = false;
-                    } else {
-                        status_msg = "Press Esc first, then Shift+Tab to switch pane".to_string();
-                    }
+                if matches!(key_event.code, KeyCode::Tab | KeyCode::BackTab) {
+                    focus = match (focus, key_event.code) {
+                        (Focus::Source, KeyCode::BackTab) | (Focus::Assembly, KeyCode::Tab) => Focus::Assembly,
+                        _ => Focus::Source,
+                    };
+                    status_msg = format!("FOCUS -> {:?}", focus);
                     continue;
                 }
 

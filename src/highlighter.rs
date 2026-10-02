@@ -3,25 +3,26 @@ use ratatui::{
     text::{Line, Span},
 };
 use regex::Regex;
+use std::sync::LazyLock;
 
-const VANTABLACK: Color = Color::Rgb(0, 0, 0);
-const NEON_GREEN: Color = Color::Rgb(0, 255, 65);
-const CYBER_CYAN: Color = Color::Rgb(0, 255, 255);
+use crate::{CYBER_CYAN, NEON_GREEN, VANTABLACK};
+
 const YELLOW: Color = Color::Rgb(255, 255, 0);
 const ORANGE: Color = Color::Rgb(255, 100, 0);
 const DARK_GRAY: Color = Color::Rgb(80, 80, 80);
 
-lazy_static::lazy_static! {
-    static ref TOKEN_RE: Regex = Regex::new(
+static TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
         r"(?x)
         (?P<label>^[[:space:]]*[\.\w]+:)
         |(?P<directive>\.[a-zA-Z_]\w*)
         |(?P<instr>\b(?:mov|push|pop|add|sub|ret|lea|cmp|jmp|je|jne|call|movl|movq|xor)\b)
         |(?P<reg>\b(?:rax|rbp|rsp|rbx|rcx|rdx|rsi|rdi|r8|r9|r10|r11|r12|r13|r14|r15)\b)
         |(?P<const>(?:0x[0-9A-Fa-f]+|\b\d+\b))
-        "
-    ).unwrap();
-}
+        ",
+    )
+    .unwrap()
+});
 
 pub fn highlight_asm(asm: &str) -> Vec<Line<'static>> {
     let mut lines = Vec::new();

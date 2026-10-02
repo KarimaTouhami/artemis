@@ -59,7 +59,7 @@ The application opens with your C code on the left and generated assembly on the
 |-----|--------|
 | `q` | Quit |
 | `?` | Show help |
-| `Esc`, then `Tab` / `Shift+Tab` | Switch panes |
+| `Tab` / `Shift+Tab` | Switch panes |
 | `Ctrl+s` | Save file |
 | `r` | Reload from disk |
 | `F5` | Toggle follow-mode |
@@ -135,7 +135,6 @@ Artemis uses these flags for optimal mapping:
 | Component | Purpose |
 |-----------|---------|
 | **Core UI** | Ratatui + Crossterm for terminal rendering |
-| **File Watcher** | Notify crate monitors source file changes |
 | **Compiler** | GCC pipeline for assembly generation |
 | **Parser** | DWARF `.loc` directive extraction |
 | **Theme** | Custom Vantablack cyberpunk color palette |
@@ -180,7 +179,6 @@ make help       # Show all targets
 Core modules:
 - **`main.rs`** — Application entry point and event loop
 - **`compiler.rs`** — GCC invocation and `.loc` directive parsing
-- **`watcher.rs`** — File monitoring and change detection
 - **`highlighter.rs`** — Syntax highlighting and color management
 
 See `compiler.rs::build_loc_instruction_map()` for the mapping algorithm implementation.
